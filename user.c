@@ -43,24 +43,32 @@ int main(int argc, char ** argv) {
 	if (msgrcv(msgid, &message, sizeof(message), getpid(), 0) < 0)
 		perror("msgrcv user: \n");
 	*/
-	
-	message.mesgType = 1;
 
-	message.pid = getpid();
-
-	message.pageNumber = 32;
-	
-	message.readOrWrite = rand() % 2;
-	
-	if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
-		perror("msgsnd user:");
-	
-	
-	
 	//seeding random
 	srand(time(NULL));
 	
-	int memoryReference = rand() % 32 + 1;
+
+	int loopBreak = 1;
+	while (loopBreak) {
+
+		message.mesgType = 1;
+
+        	message.pid = getpid();
+
+        	message.pageNumber = rand() % 32;
+
+        	message.readOrWrite = rand() % 2;
+
+        	if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
+                	perror("msgsnd user:");
+	
+		if (msgrcv(msgid, &message, sizeof(message), getpid(), 0) < 0)
+			perror("msgsnd user: ");
+		
+	}
+		
+	
+	
 	
 		
 

@@ -138,6 +138,12 @@ int main(int argc, char ** argv) {
 	unsigned int sClock[2];	
 	sClock[0] = 0; sClock[1] = 0;
 	
+	//queue for keeping track of memory references
+	Queue * memoryReferenceQueue = createQueue(256);
+
+	//array for representing physical memory
+	frame frames[256];
+	
 	signal(SIGINT, handle_sigint);	
 	
 	//seeding random
@@ -181,16 +187,13 @@ int main(int argc, char ** argv) {
 
 	}
 	
-	//array to represent physical address space
-	frame frames[256];
-	
 	//initialize frame table
 	for (i = 0; i != 256; i += 1) {
 		frames[i].referenceBit = 0;
 		frames[i].dirtyBit = 0;
 	}
 	
-	Queue * memoryReferenceQueue = createQueue(256);
+	
 	
 		
 	/*
@@ -254,21 +257,33 @@ int main(int argc, char ** argv) {
 			}	
 	
 		}
+	
+		//receive message from user processes
+		if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
+               		perror("msgrcv: ");
+
+		//determine if process wants to read or write to
+		if (message.readOrWrite == 0) { //read
+                	printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);
+       		}
+        	else if (message.readOrWrite == 1){ //write
+                	printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
+        	}
 		
+		for (i = 0; i != MAX_PROCESSES; i += 1)
+			if (PCB[i].processID == message.pid)
+				break;
+		
+		
+		if (PCB[i].pageTable[message.pageNumber] == -1)
+			printf("page %d not in frame, page fault\n", message.pageNumber);
+
+		message.mesgType = message.pid;
+
+		if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
+			perror("msgsnd oss: ");
 	}	
 		
-
-	
-	//receive message from user
-	if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
-		perror("msgrcv: ");
-	
-	if (message.readOrWrite == 0) { //read 
-		printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);	
-	}
-	else {
-		printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
-	}
 
 		
 		
