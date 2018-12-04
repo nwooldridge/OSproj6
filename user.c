@@ -7,21 +7,26 @@
 #include <signal.h>
 
 struct mesgBuffer {
+	//store pid in mesgType
         long mesgType;
-        //process id
-        pid_t pid;
+	//process id
+	pid_t pid;
 	//page number
 	int pageNumber;
 	//0 for read, 1 for write
 	int readOrWrite;
+	
 
 } message;
  
 int main(int argc, char ** argv) {
-	printf("hello from user!\n");
+	
 	//loop counters
 	int i, j;
 	
+	//seeding random
+	srand(time(NULL));
+
 	//setting up  message queues
 	key_t msgKey = ftok("msgqfile", 51);	
 
@@ -39,7 +44,13 @@ int main(int argc, char ** argv) {
 		perror("msgrcv user: \n");
 	*/
 	
-	message.mesgType = getpid();
+	message.mesgType = 1;
+
+	message.pid = getpid();
+
+	message.pageNumber = 32;
+	
+	message.readOrWrite = rand() % 2;
 	
 	if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
 		perror("msgsnd user:");

@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <unistd.h>
 
 //Queue structure
 //Source: https://www.geeksforgeeks.org/queue-set-1introduction-and-array-implementation/
@@ -104,9 +105,19 @@ struct mesgBuffer {
 	int readOrWrite;
 } message;
 
-key_t msgKey, shmKey;
-int msgid, shmid;
 process * PCB;
+int shmid, msgid;
+
+void handle_sigint(int sig) {
+
+        printf("\nCaught signal: %d\n", sig);
+        if (shmctl(shmid, IPC_RMID, NULL) < 0)
+                perror("shmctl oss: ");
+        if (msgctl(msgid, IPC_RMID, NULL) < 0)
+                perror("msgctl oss: ");
+        if (shmdt(PCB) < 0)
+                perror("shmdt oss: ");
+}
 
 //size of PCB
 const int MAX_PROCESSES = 18;
@@ -114,12 +125,21 @@ const int MAX_PROCESSES = 18;
 int main(int argc, char ** argv) {
 	//loop counters
 	int i, j;
+
+	//simulated clock
+	unsigned int sClock[2];	
+	sClock[0] = 0; sClock[1] = 0;
+	
+	signal(SIGINT, handle_sigint);	
+	
+	//seeding random
+	srand(time(NULL));
 	
 	//Create key for msgqueue	
-	msgKey = ftok("msgqfile", 51);
+	key_t msgKey = ftok("msgqfile", 51);
 	
 	//Create key for shared memory
-	shmKey = ftok("shmfile", 12);
+	key_t shmKey = ftok("shmfile", 12);
 
 	//error checking for ftok
 	if (msgKey == -1 || shmKey == -1)
@@ -129,7 +149,7 @@ int main(int argc, char ** argv) {
 	msgid = msgget(msgKey, 0666|IPC_CREAT);
 	
 	//create shared memory segment for process control blocks
-	shmid = shmget(shmKey, MAX_PROCESSES*sizeof(process), 0666|IPC_CREAT);
+	shmid = shmget(shmKey, MAX_PROCESSES*sizeof(process), IPC_CREAT | 0666);
 	
 	//error checking for msgget and shmget	
 	if (msgid == -1)
@@ -162,7 +182,7 @@ int main(int argc, char ** argv) {
 		frames[i].dirtyBit = 0;
 	}
 	
-	message.mesgType = 1;
+
 	
 		
 	/*
@@ -179,23 +199,33 @@ int main(int argc, char ** argv) {
 		perror("fork: ");
 	else if (childpid == 0) {
 		//in child
-		
+	
 		//set process id in PCB
 		for (i = 0; i != MAX_PROCESSES; i += 1){
-			if (PCB[i].processID == 0)
+			printf("%d\n", i);
+			if (PCB[i].processID == 0) {
 				PCB[i].processID = getpid();
+				printf("creating process with pid %d and assigning it to P%d", getpid(), i);
+				break;
+			}
 		}
-
-		
-		execlp("./user", "user", NULL);
+				
+		execl("./user", "user", NULL);
 		perror("execlp: ");
 	}
 
-	pid_t cpid = PCB[0].processID;
-	//receive message from user	
-	if (msgrcv(msgid, &message, sizeof(message), cpid, 1) < 0)
+
+	
+	//receive message from user
+	if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
 		perror("msgrcv: ");
-	printf("\nhello123!");	
+	
+	if (message.readOrWrite == 0) { //read 
+		printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);	
+	}
+	else {
+		printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
+	}
 
 		
 		
