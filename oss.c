@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <unistd.h>
+#include <math.h>
+
+#define true 1
+#define false 0
 
 //Queue structure
 //Source: https://www.geeksforgeeks.org/queue-set-1introduction-and-array-implementation/
@@ -16,8 +20,9 @@ struct Queue
     unsigned capacity; 
     int* array; 
 }; 
+typedef struct Queue Queue;	
 
-//create queue function
+//initialize queue
 struct Queue* createQueue(unsigned capacity) 
 { 
     struct Queue* queue = (struct Queue*) malloc(sizeof(struct Queue)); 
@@ -117,7 +122,10 @@ void handle_sigint(int sig) {
                 perror("msgctl oss: ");
         if (shmdt(PCB) < 0)
                 perror("shmdt oss: ");
+	exit(-1);
 }
+
+
 
 //size of PCB
 const int MAX_PROCESSES = 18;
@@ -182,38 +190,73 @@ int main(int argc, char ** argv) {
 		frames[i].dirtyBit = 0;
 	}
 	
-
+	Queue * memoryReferenceQueue = createQueue(256);
 	
 		
 	/*
 	if (msgsnd(msgid, &message, sizeof(message), 0))
 		perror("msgsnd oss");
 	*/
-	
-		
-	//fork off
-	
-	pid_t childpid = fork();
-		
-	if (childpid == -1)
-		perror("fork: ");
-	else if (childpid == 0) {
-		//in child
-	
-		//set process id in PCB
-		for (i = 0; i != MAX_PROCESSES; i += 1){
-			printf("%d\n", i);
-			if (PCB[i].processID == 0) {
-				PCB[i].processID = getpid();
-				printf("creating process with pid %d and assigning it to P%d", getpid(), i);
-				break;
-			}
-		}
-				
-		execl("./user", "user", NULL);
-		perror("execlp: ");
-	}
 
+	//terminates loop when set to 0
+	int breakLoop = 1;
+	//keep track of time to next fork
+	unsigned int nextFork[2];
+	nextFork[0] = 0; nextFork[1] = 0;
+	//time at start of program
+	time_t startTime = time(NULL);
+	
+	//main loop, set breakLoop to 0 to stop loop
+	while (breakLoop) {
+		
+		//break out of loop after 10 real time seconds
+		if (difftime(time(NULL), startTime) >= 10) {
+			breakLoop = 0;
+			continue;
+		}
+	
+	
+		//if enough time has passed to fork
+		if ((sClock[0] >= nextFork[0]) && (sClock[1] >= nextFork[1])) {
+			pid_t childpid = fork();
+
+			//fork error if returns -1
+			if (childpid == -1)
+				perror("fork: ");
+			
+			//in child process
+			else if (childpid == 0){
+				
+				for (i = 0; i != MAX_PROCESSES; i += 1){
+                        		
+					//creating process control block
+                        		if (PCB[i].processID == 0) {
+                                		PCB[i].processID = getpid();
+                                		printf("creating process with pid %d and assigning it to P%d", getpid(), i);
+                                		break;
+                        		}
+                		}		
+				
+				//executes user process
+				execl("./user", "user", NULL);
+				//if it makes it this far, its an error
+                		perror("execlp: ");
+	
+			}
+			
+			//increase time to next fork by random value between 1 and 500 milliseconds
+			nextFork[1] = pow(10, 6) * (rand() & 500 + 1);
+	
+			//for every billion nanoseconds add 1 second and subtract billion nanoseconds
+			while (nextFork[1] > 99999999) {
+				nextFork[1] -= 1000000000;
+				nextFork[0] += 1;
+			}	
+	
+		}
+		
+	}	
+		
 
 	
 	//receive message from user
@@ -231,12 +274,12 @@ int main(int argc, char ** argv) {
 		
 	
 	//Destroy message queue
-	if (msgctl(msgid, IPC_RMID, NULL) == -1)
+	if (msgctl(msgid, IPC_RMID, NULL) < 0)
                 perror("msgctl oss: ");
 	
-	if (shmctl(shmid, IPC_RMID, NULL) == -1)
+	if (shmctl(shmid, IPC_RMID, NULL) < 0)
 		perror("shmctl oss: ");	
-	if (shmdt(PCB) == -1)
+	if (shmdt(PCB) < 0)
 		perror("shmdt oss: ");		
 	return 0;
 }
