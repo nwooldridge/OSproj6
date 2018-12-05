@@ -231,6 +231,7 @@ int main(int argc, char ** argv) {
 		printf("Time to next fork: %d : %d. Processes: %d\n", nextFork[0], nextFork[1], processCounter);	
 		//if enough time has passed to fork
 		if ((sClock[0] >= nextFork[0]) && (sClock[1] >= nextFork[1]) && (processCounter < 18)) {
+
 			processCounter += 1;
 			pid_t childpid = fork();
 
@@ -245,10 +246,9 @@ int main(int argc, char ** argv) {
                         		
 					//creating process control block
                         		if (PCB[i].processID == 0) {
-						printf("Am i making it here\n");
+					
                                 		PCB[i].processID = getpid();
                                 		printf("creating process with pid %d and assigning it to P%d\n", getpid(), i);
-                                		//processCounter += 1;
 						break;
                         		}
                 		}		
@@ -260,7 +260,7 @@ int main(int argc, char ** argv) {
 	
 			}
 			
-			//increase time to next fork by random value between 1 and 500 milliseconds
+			//increase time to next fork by random value between 10 and 5000 milliseconds
 			nextFork[1] = pow(10, 7) * (rand() % 500 + 1);
 	
 			//for every billion nanoseconds add 1 second and subtract billion nanoseconds
@@ -278,6 +278,12 @@ int main(int argc, char ** argv) {
 		//receive message from user processes
 		if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
                		perror("msgrcv: ");
+
+		for (i = 0; i != MAX_PROCESSES; i += 1) {
+			if (PCB[i].processID == message.pid)
+				break;
+		}
+		int currentProcess = i;
 		
 		//if message is read or write request
 		if (message.readOrWrite == 0 || message.readOrWrite == 1) { 
@@ -296,14 +302,6 @@ int main(int argc, char ** argv) {
 				sClock[1] -= pow(10, 9);
 				sClock[0] += 1;
 			}
-						
-		
-			//find pcb with corresponding process id
-                	for (i = 0; i != MAX_PROCESSES; i += 1) {
-                		if (PCB[i].processID == message.pid)
-                			break;
-			}
-			int currentProcess = i;
 			
 			//stores temporary values from queue
 			int tmp;
@@ -318,8 +316,77 @@ int main(int argc, char ** argv) {
 				//if queue is full then oss performs swap of pages
 				if (isFull(memoryReferenceQueue)) {
 					
+					//iterate through queue finding frame to write new page to
+					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
+						
+						//dequeue item and store into tmp variable
+						tmp = dequeue(memoryReferenceQueue);
+
+						//dequeue returns min_int if queue is empty
+						if (tmp < 0)
+							printf("issues dequeueing, queue empty\n");
+						//otherwise a frame is returned
+						else {
+							
+							//checks reference bit as part of second chance
+							//if it is 0, then this frame can be used
+							if (frames[tmp].referenceBit == 0) {
+								
+								//deallocate previous page pointing to tmp frame
+								for (j = 0; j != MAX_PROCESSES; j += 1) {
+														
+									//if pcb with matching pid is found
+									if (PCB[j].processID == frames[tmp].processID) {
+											
+										//iterate through pages to find frame tmp
+										for (k = 0; k != 32; k += 1) {
+		
+											//found matching frame number
+											if (PCB[j].pageTable[k] == tmp) {
+												PCB[j].pageTable[k] = -1;
+												break;
+											}
+										}
+										//if we iterate through entire loop, that means bigger issues
+										if (k == 32)
+											printf("error finding page pointing to tmp frame\n");
+										
+										break;
+									}
+
+								}
+								//no matching pid is found in PCB.
+								if (j == MAX_PROCESSES)
+									printf("didn't find process with specified pid in PCB's\n");
+								
+								//set new page to reference frame tmp
+								PCB[currentProcess].pageTable[pageNumber] = tmp;
+								
+								//set process id on frame to new process
+								frames[tmp].processID = message.pid;
+
+								//put back into queue
+								enqueue(memoryReferenceQueue, tmp);
+								break;
+							
+							}
+								
+							//otherwise reference bit is 1 so we move on in queue
+							else {
+								
+								//set reference bit back to 0
+								frames[tmp].referenceBit = 0;
+
+								//put back into queue to move to next item
+								enqueue(memoryReferenceQueue, tmp);
+
+							}
+						}
+		
+					}
+						
 					//printf("queue is full, performing swap...\n");
-					
+					/*
 					//find frame to overwrite new page onto
 					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
 
@@ -361,7 +428,7 @@ int main(int argc, char ** argv) {
 								printf("weve got issues\n");
 						}
 					}
-				}
+				}*/
 				//if queue is not full
 				else {
 					//random frame to start looking for unallocated frames
