@@ -47,10 +47,11 @@ int main(int argc, char ** argv) {
 	//seeding random
 	srand(time(NULL));
 	
-
+	
 	int loopBreak = 1;
+	int count = 0;
 	while (loopBreak) {
-
+		
 		message.mesgType = 1;
 
         	message.pid = getpid();
@@ -64,6 +65,8 @@ int main(int argc, char ** argv) {
 	
 		if (msgrcv(msgid, &message, sizeof(message), getpid(), 0) < 0)
 			perror("msgsnd user: ");
+		
+		count += 1;
 		
 	}
 		

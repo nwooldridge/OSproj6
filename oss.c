@@ -51,7 +51,7 @@ void enqueue(struct Queue* queue, int item)
     queue->rear = (queue->rear + 1)%queue->capacity; 
     queue->array[queue->rear] = item; 
     queue->size = queue->size + 1; 
-    printf("%d enqueued to queue\n", item); 
+    //printf("%d enqueued to queue\n", item); 
 } 
 
 //dequeue item from front of queue
@@ -144,6 +144,8 @@ int main(int argc, char ** argv) {
 	
 	//keeps track of amount of active processes
 	int processCounter = 0;
+	//keeps track of total page faults 
+	int pageFaults = 0;
 	
 	//queue for keeping track of memory references
 	Queue * memoryReferenceQueue = createQueue(256);
@@ -265,6 +267,10 @@ int main(int argc, char ** argv) {
 				nextFork[1] -= 1000000000;
 				nextFork[0] += 1;
 			}	
+			while (sClock[1] > 999999999) {
+				sClock[1] -= 1000000000;
+				sClock[0] += 1;
+			}
 	
 		}
 	
@@ -276,9 +282,9 @@ int main(int argc, char ** argv) {
 		if (message.readOrWrite == 0 || message.readOrWrite == 1) { 
                 	
 			if (message.readOrWrite == 0)
-				printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);
+				printf("Process %d requesting read to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
                 	else if (message.readOrWrite == 1)
-				printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
+				printf("Process %d requesting write to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
                 	else
 				printf("error with something\n");
 		
@@ -295,11 +301,16 @@ int main(int argc, char ** argv) {
 
 			//if page requested isnt in a frame
 			if (PCB[i].pageTable[message.pageNumber] == -1) {
+
                         	printf("page %d not in frame, page fault\n", message.pageNumber);
-				//if queue is full then oss stores different page in frame
+				pageFaults += 1;
+
+				//if queue is full then oss performs swap of pages
 				if (isFull(memoryReferenceQueue)) {
+	
 					//find frame to overwrite new page onto
 					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
+
 						tmp = dequeue(memoryReferenceQueue);
 						//dequeue returns small int on failure
 						if (tmp < 0)
@@ -309,10 +320,13 @@ int main(int argc, char ** argv) {
 							if (frames[tmp].referenceBit == 1) {
 								enqueue(memoryReferenceQueue, tmp);
 							}
+
 							//else dequeue and change frame to new page
 							else if (frames[tmp].referenceBit == 0) {
 								
 								//setting previous page back to -1 in page table
+								//this requires searching through PCB's and finding corresponding
+								//process
 								for (j = 0; j != MAX_PROCESSES; j += 1) {
 									if (PCB[j].processID == frames[tmp].processID)
 										break;
@@ -320,7 +334,7 @@ int main(int argc, char ** argv) {
 								for (k = 0; k != 32; k += 1)
 									if (PCB[j].pageTable[k] == tmp)
 										break;
-								printf("removing page %d from frame %d, adding page %d\n",  k, tmp, message.pageNumber);
+								printf("swapping page %d into frame %d\n", message.pageNumber, tmp);
 								PCB[j].pageTable[k] = -1;
 
 								//store pid into frame
@@ -353,9 +367,9 @@ int main(int argc, char ** argv) {
 						//starts with random frame, if it is allocated, then checks the next after
 						//that and so on until an unallocated frame is found
 						
-						if (frames[x].allocated = 1)
+						if (frames[x].allocated == 1)
 							x += 1;
-						else if (frames[x].allocated = 0) {
+						else if (frames[x].allocated == 0) {
 							
 							//set this frame to allocated
 							frames[x].allocated = 1;
@@ -371,6 +385,20 @@ int main(int argc, char ** argv) {
 					}
 				}
                 	}
+			//otherwise the page is already in a frame
+			else {
+				printf("page %d already in frame %d\n", message.pageNumber, PCB[currentProcess].pageTable[message.pageNumber]);
+				if (message.readOrWrite == 1) { //write
+					//set dirty bit and increment clock
+					frames[PCB[currentProcess].pageTable[message.pageNumber]].dirtyBit = 1;
+					sClock[1] += 10;
+				}
+				else if (message.readOrWrite == 0) { //read
+					//increment the clock for read
+					sClock[1] += 10;
+				}
+			}
+			
                 	
 
         	}
@@ -383,7 +411,7 @@ int main(int argc, char ** argv) {
 					break;
 			PCB[i].processID = 0;
 			
-			int tmp; ;
+			int tmp;
 			//deallocate all frames
 			for (j = 0; j != 32; j += 1) {
 				//if page is in frame
