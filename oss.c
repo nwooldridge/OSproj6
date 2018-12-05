@@ -226,12 +226,12 @@ int main(int argc, char ** argv) {
 		//break out of loop after 10 real time seconds
 		if (difftime(time(NULL), startTime) >= 10) {
 			breakLoop = 0;
-			continue;
 		}
 	
-	
+		printf("Time to next fork: %d : %d. Processes: %d\n", nextFork[0], nextFork[1], processCounter);	
 		//if enough time has passed to fork
 		if ((sClock[0] >= nextFork[0]) && (sClock[1] >= nextFork[1]) && (processCounter < 18)) {
+			processCounter += 1;
 			pid_t childpid = fork();
 
 			//fork error if returns -1
@@ -245,9 +245,10 @@ int main(int argc, char ** argv) {
                         		
 					//creating process control block
                         		if (PCB[i].processID == 0) {
+						printf("Am i making it here\n");
                                 		PCB[i].processID = getpid();
-                                		printf("creating process with pid %d and assigning it to P%d", getpid(), i);
-                                		processCounter += 1;
+                                		printf("creating process with pid %d and assigning it to P%d\n", getpid(), i);
+                                		//processCounter += 1;
 						break;
                         		}
                 		}		
@@ -260,15 +261,15 @@ int main(int argc, char ** argv) {
 			}
 			
 			//increase time to next fork by random value between 1 and 500 milliseconds
-			nextFork[1] = pow(10, 6) * (rand() % 500 + 1);
+			nextFork[1] = pow(10, 7) * (rand() % 500 + 1);
 	
 			//for every billion nanoseconds add 1 second and subtract billion nanoseconds
-			while (nextFork[1] > 99999999) {
-				nextFork[1] -= 1000000000;
+			while (nextFork[1] > 999999999) {
+				nextFork[1] -= pow(10, 9);
 				nextFork[0] += 1;
 			}	
 			while (sClock[1] > 999999999) {
-				sClock[1] -= 1000000000;
+				sClock[1] -= pow(10, 9);
 				sClock[0] += 1;
 			}
 	
@@ -277,7 +278,7 @@ int main(int argc, char ** argv) {
 		//receive message from user processes
 		if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
                		perror("msgrcv: ");
-
+		
 		//if message is read or write request
 		if (message.readOrWrite == 0 || message.readOrWrite == 1) { 
                 	
@@ -287,18 +288,27 @@ int main(int argc, char ** argv) {
 				printf("Process %d requesting write to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
                 	else
 				printf("error with something\n");
+			
+			//increment clock by 15 milliseconds
+			//decrement clock by 1 billion nanoseconds and add 1 to seconds
+			sClock[1] += 15 * pow(10, 6);
+			if (sClock[1] > 999999999) {
+				sClock[1] -= pow(10, 9);
+				sClock[0] += 1;
+			}
+						
 		
 			//find pcb with corresponding process id
-                	for (i = 0; i != MAX_PROCESSES; i += 1)
+                	for (i = 0; i != MAX_PROCESSES; i += 1) {
                 		if (PCB[i].processID == message.pid)
                 			break;
-
+			}
+			int currentProcess = i;
+			
 			//stores temporary values from queue
 			int tmp;
 	
-			//used to keep track of what process we are working with
-			int currentProcess = i;
-
+			
 			//if page requested isnt in a frame
 			if (PCB[i].pageTable[message.pageNumber] == -1) {
 
@@ -307,7 +317,9 @@ int main(int argc, char ** argv) {
 
 				//if queue is full then oss performs swap of pages
 				if (isFull(memoryReferenceQueue)) {
-	
+					
+					//printf("queue is full, performing swap...\n");
+					
 					//find frame to overwrite new page onto
 					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
 
@@ -406,9 +418,10 @@ int main(int argc, char ** argv) {
 			printf("Process %d terminating\n", message.pid);
 			
 			//set corresponding PCB process id to 0
-			for (i = 0; i != MAX_PROCESSES; i += 1)
+			for (i = 0; i != MAX_PROCESSES; i += 1) {
 				if (PCB[i].processID == message.pid)
 					break;
+			}
 			PCB[i].processID = 0;
 			
 			int tmp;
@@ -417,7 +430,8 @@ int main(int argc, char ** argv) {
 				//if page is in frame
 				if (PCB[i].pageTable[j] >= 0) {
 					//sift through memory frames to free frames used by this process
-					while (true) {
+					int y = 0;
+					while (true && y <= memoryReferenceQueue->size) {
 						//dequeue item
 						tmp = dequeue(memoryReferenceQueue);
 						//dequeue returns MIN_INT on error
@@ -433,6 +447,8 @@ int main(int argc, char ** argv) {
 						else { 
 							enqueue(memoryReferenceQueue, tmp);
 						}
+						y += 1;
+						
 					}
 					//clear page table 
 					PCB[i].pageTable[j] = -1;

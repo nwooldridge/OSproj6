@@ -51,14 +51,26 @@ int main(int argc, char ** argv) {
 	int loopBreak = 1;
 	int count = 0;
 	while (loopBreak) {
-		
+	
+		//mesgType set to 1 for oss process to receive message	
 		message.mesgType = 1;
+		
+		//assign process id to message so oss knows 
+        	message.pid = getpid();	
 
-        	message.pid = getpid();
-
+		//get random page number for user to simulate reading or writing to
         	message.pageNumber = rand() % 32;
-
+		
+		//0 is read 1 is write. if readOrWrite is -1, then user process is terminating
         	message.readOrWrite = rand() % 2;
+		
+		//every 1000 iterations of loop, process has 50% chance of termination
+		if (count % 100 == 0) {
+			if (rand() % 2 == 0) {
+				loopBreak = 0;
+				message.readOrWrite = -1;
+			}
+		}
 
         	if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
                 	perror("msgsnd user:");
