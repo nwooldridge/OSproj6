@@ -138,6 +138,10 @@ int main(int argc, char ** argv) {
 	//loop counters
 	int i, j, k;
 
+	FILE * f = fopen("log.txt", "a");
+	
+	int writes = 0;
+
 	//simulated clock
 	unsigned int sClock[2];	
 	sClock[0] = 0; sClock[1] = 0;
@@ -146,6 +150,7 @@ int main(int argc, char ** argv) {
 	int processCounter = 0;
 	//keeps track of total page faults 
 	int pageFaults = 0;
+	int memoryAccesses = 0;
 	
 	//queue for keeping track of memory references
 	Queue * memoryReferenceQueue = createQueue(256);
@@ -205,8 +210,6 @@ int main(int argc, char ** argv) {
 	}
 	
 	
-	
-		
 	/*
 	if (msgsnd(msgid, &message, sizeof(message), 0))
 		perror("msgsnd oss");
@@ -227,8 +230,7 @@ int main(int argc, char ** argv) {
 		if (difftime(time(NULL), startTime) >= 10) {
 			breakLoop = 0;
 		}
-	
-		printf("Time to next fork: %d : %d. Processes: %d\n", nextFork[0], nextFork[1], processCounter);	
+		
 		//if enough time has passed to fork
 		if ((sClock[0] >= nextFork[0]) && (sClock[1] >= nextFork[1]) && (processCounter < 18)) {
 
@@ -248,7 +250,11 @@ int main(int argc, char ** argv) {
                         		if (PCB[i].processID == 0) {
 					
                                 		PCB[i].processID = getpid();
-                                		printf("creating process with pid %d and assigning it to P%d\n", getpid(), i);
+						if (writes < 10000) {
+                                			fprintf(f, "creating process with pid %d and assigning it to P%d\n", getpid(), i);
+							writes += 1;
+						}
+	
 						break;
                         		}
                 		}		
@@ -279,6 +285,8 @@ int main(int argc, char ** argv) {
 		if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
                		perror("msgrcv: ");
 
+		memoryAccesses += 1;
+
 		for (i = 0; i != MAX_PROCESSES; i += 1) {
 			if (PCB[i].processID == message.pid)
 				break;
@@ -289,9 +297,15 @@ int main(int argc, char ** argv) {
 		if (message.readOrWrite == 0 || message.readOrWrite == 1) { 
                 	
 			if (message.readOrWrite == 0)
-				printf("Process %d requesting read to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
+				if (writes < 10000) {
+					fprintf(f, "Process %d requesting read to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
+					writes += 1;
+				}
                 	else if (message.readOrWrite == 1)
-				printf("Process %d requesting write to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
+				if (writes < 10000) {
+					fprintf(f, "Process %d requesting write to page %d at time %d : %d\n", message.pid, message.pageNumber, sClock[0], sClock[1]);
+					writes += 1;
+				}
                 	else
 				printf("error with something\n");
 			
@@ -310,14 +324,18 @@ int main(int argc, char ** argv) {
 			//if page requested isnt in a frame
 			if (PCB[i].pageTable[message.pageNumber] == -1) {
 
-                        	printf("page %d not in frame, page fault\n", message.pageNumber);
+
+				if (writes < 10000) {
+                        		fprintf(f, "page %d not in frame, page fault\n", message.pageNumber);
+					writes += 1;
+				}
 				pageFaults += 1;
 
 				//if queue is full then oss performs swap of pages
 				if (isFull(memoryReferenceQueue)) {
 					
 					//iterate through queue finding frame to write new page to
-					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
+					for (i = 0; 1; i += 1) {
 						
 						//dequeue item and store into tmp variable
 						tmp = dequeue(memoryReferenceQueue);
@@ -358,12 +376,25 @@ int main(int argc, char ** argv) {
 								//no matching pid is found in PCB.
 								if (j == MAX_PROCESSES)
 									printf("didn't find process with specified pid in PCB's\n");
-								
+								if (writes < 10000) {
+									fprintf(f, "swapping out page %d with page %d into frame %d\n", k, message.pageNumber, tmp);					
+									writes += 1;
+								}
+			
 								//set new page to reference frame tmp
-								PCB[currentProcess].pageTable[pageNumber] = tmp;
+								PCB[currentProcess].pageTable[message.pageNumber] = tmp;
 								
 								//set process id on frame to new process
 								frames[tmp].processID = message.pid;
+
+								//set dirty bit if it is a write
+								if (message.readOrWrite == 1)
+									frames[tmp].dirtyBit = 1;
+								else
+									frames[tmp].dirtyBit = 0;
+
+								//set reference bit to 0
+								frames[tmp].referenceBit = 0;
 
 								//put back into queue
 								enqueue(memoryReferenceQueue, tmp);
@@ -384,97 +415,67 @@ int main(int argc, char ** argv) {
 						}
 		
 					}
-						
+					
 					//printf("queue is full, performing swap...\n");
-					/*
-					//find frame to overwrite new page onto
-					for (i = 0; i != memoryReferenceQueue->size; i += 1) {
-
-						tmp = dequeue(memoryReferenceQueue);
-						//dequeue returns small int on failure
-						if (tmp < 0)
-							printf("we've got issues\n");
-						else {
-							//if reference bit is 1, then move onto next in queue
-							if (frames[tmp].referenceBit == 1) {
-								enqueue(memoryReferenceQueue, tmp);
-							}
-
-							//else dequeue and change frame to new page
-							else if (frames[tmp].referenceBit == 0) {
-								
-								//setting previous page back to -1 in page table
-								//this requires searching through PCB's and finding corresponding
-								//process
-								for (j = 0; j != MAX_PROCESSES; j += 1) {
-									if (PCB[j].processID == frames[tmp].processID)
-										break;
-								}
-								for (k = 0; k != 32; k += 1)
-									if (PCB[j].pageTable[k] == tmp)
-										break;
-								printf("swapping page %d into frame %d\n", message.pageNumber, tmp);
-								PCB[j].pageTable[k] = -1;
-
-								//store pid into frame
-								frames[tmp].processID = message.pid;
-								//store back in queue
-								enqueue(memoryReferenceQueue, tmp);
-								//setting frame number in page
-								PCB[currentProcess].pageTable[message.pageNumber] = tmp;
-								break;
-							}
-							else
-								printf("weve got issues\n");
-						}
-					}
-				}*/
+				}
+				
 				//if queue is not full
 				else {
-					//random frame to start looking for unallocated frames
-					int x = rand() % 256;
-					int count = 0;
-					while (true) {
-						//avoid overflow
-						if (x > 255)
-							x -= 255;
-						//if loop iterates over 255 times, there is issues
-						if (count > 255) {
-							printf("issues here\n");
-							break;
-						}
-						//starts with random frame, if it is allocated, then checks the next after
-						//that and so on until an unallocated frame is found
-						
-						if (frames[x].allocated == 1)
-							x += 1;
-						else if (frames[x].allocated == 0) {
-							
-							//set this frame to allocated
-							frames[x].allocated = 1;
-							//set page to frame in pagetable
-							PCB[currentProcess].pageTable[message.pageNumber] = x;
+
+					//randomly find a frame number to start at
+					int startFrame = rand() % 256;
+					for (i = 0; i != 256; i += 1) {
+				
+						//avoid seg fault
+						if (startFrame > 255)
+							startFrame -= 256;
+				
+						//finding unallocated frame
+						if (frames[startFrame].allocated == 0) {
+	
+							//putting page into frame and initializing frame and page
+							PCB[currentProcess].pageTable[message.pageNumber] = startFrame;
+							frames[startFrame].allocated = 1;
 							if (message.readOrWrite == 1)
-								frames[x].dirtyBit = 1;
-							enqueue(memoryReferenceQueue, x);
-							printf("adding page %d to frame %d\n", message.pageNumber, x);
+								frames[startFrame].dirtyBit = 1;
+							else
+								frames[startFrame].dirtyBit = 0;
+							frames[startFrame].referenceBit = 0;
+							frames[startFrame].processID = message.pid;
+							enqueue(memoryReferenceQueue, startFrame);
+						
+							if (writes < 10000) {
+								fprintf(f, "putting page %d into frame %d\n", message.pageNumber, startFrame);		
+								writes += 1;
+							}
 							break;
+							
 						}
-						count += 1;
+						startFrame += 1;
 					}
+					if (i == 256)
+						printf("issue with finding unallocated frame\n");
+			
+				
 				}
                 	}
 			//otherwise the page is already in a frame
 			else {
-				printf("page %d already in frame %d\n", message.pageNumber, PCB[currentProcess].pageTable[message.pageNumber]);
+				if (writes < 10000) {
+					fprintf(f, "page %d already in frame %d\n", message.pageNumber, PCB[currentProcess].pageTable[message.pageNumber]);
+					writes += 1;
+				}
+
 				if (message.readOrWrite == 1) { //write
 					//set dirty bit and increment clock
 					frames[PCB[currentProcess].pageTable[message.pageNumber]].dirtyBit = 1;
 					sClock[1] += 10;
+					frames[PCB[currentProcess].pageTable[message.pageNumber]].referenceBit = 1;
 				}
 				else if (message.readOrWrite == 0) { //read
 					//increment the clock for read
 					sClock[1] += 10;
+					frames[PCB[currentProcess].pageTable[message.pageNumber]].referenceBit = 1;
 				}
 			}
 			
@@ -482,7 +483,11 @@ int main(int argc, char ** argv) {
 
         	}
 		else { //process terminating
-			printf("Process %d terminating\n", message.pid);
+			
+			if (writes < 10000) {
+				fprintf(f, "Process %d terminating\n", message.pid);
+				writes += 1;
+			}
 			
 			//set corresponding PCB process id to 0
 			for (i = 0; i != MAX_PROCESSES; i += 1) {
@@ -503,10 +508,10 @@ int main(int argc, char ** argv) {
 						tmp = dequeue(memoryReferenceQueue);
 						//dequeue returns MIN_INT on error
 						if (tmp < 0)
-							printf("Queue is empty. Issue in termination code\n");
+							fprintf(f, "Queue is empty. Issue in termination code\n");
 						//if frame number from queue corresponds to frame number in the page
 						else if (tmp == PCB[i].pageTable[j]) {
-							printf("removing page %d from frame %d\n", j, tmp);
+							//printf("removing page %d from frame %d\n", j, tmp);
 							frames[tmp].allocated = 0;
 							break;
 						}
@@ -528,7 +533,31 @@ int main(int argc, char ** argv) {
 			
 		}
 		
-		
+		//every 100 memory accesses print frame table
+		if (memoryAccesses % 100 == 0) {
+			
+			for (i = 0; i != 2; i += 1) {
+				if ((i == 0) && (writes < 10000)) {
+					for (j = 0; j != 256; j += 1) {
+						if (frames[j].allocated == 0)
+							fprintf(f, ".");
+						else if (frames[j].dirtyBit == 1)
+							fprintf(f, "D");
+						else
+							fprintf(f, "U");
+					}
+					fprintf(f, "\n");
+				}
+				if ((i == 1) && (writes < 10000)) {
+					for (j = 0; j != 256; j += 1) {
+						fprintf(f, "%d", frames[j].referenceBit);
+					}
+					fprintf(f, "\n");
+				}
+			}
+	
+		}
+			
 		message.mesgType = message.pid;
 
 		if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
@@ -540,6 +569,9 @@ int main(int argc, char ** argv) {
 		
 	
 	//Destroy message queue
+	
+	fclose(f);	
+
 	if (msgctl(msgid, IPC_RMID, NULL) < 0)
                 perror("msgctl oss: ");
 	if (shmctl(shmid, IPC_RMID, NULL) < 0)

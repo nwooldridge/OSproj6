@@ -65,7 +65,7 @@ int main(int argc, char ** argv) {
         	message.readOrWrite = rand() % 2;
 		
 		//every 1000 iterations of loop, process has 50% chance of termination
-		if (count % 100 == 0) {
+		if (count % 1000  == 0) {
 			if (rand() % 2 == 0) {
 				loopBreak = 0;
 				message.readOrWrite = -1;
