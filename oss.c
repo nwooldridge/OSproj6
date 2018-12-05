@@ -95,6 +95,8 @@ struct frame {
 	int referenceBit;
 	//dirty bit
 	int dirtyBit;
+	//0 for allocated, 1 for not allocated
+	int allocated;
 	
 };
 typedef struct frame frame;
@@ -138,12 +140,16 @@ int main(int argc, char ** argv) {
 	unsigned int sClock[2];	
 	sClock[0] = 0; sClock[1] = 0;
 	
+	//keeps track of amount of active processes
+	int processCounter = 0;
+	
 	//queue for keeping track of memory references
 	Queue * memoryReferenceQueue = createQueue(256);
 
 	//array for representing physical memory
 	frame frames[256];
 	
+	//signal handling
 	signal(SIGINT, handle_sigint);	
 	
 	//seeding random
@@ -191,6 +197,7 @@ int main(int argc, char ** argv) {
 	for (i = 0; i != 256; i += 1) {
 		frames[i].referenceBit = 0;
 		frames[i].dirtyBit = 0;
+		frames[i].allocated = 0;
 	}
 	
 	
@@ -236,7 +243,8 @@ int main(int argc, char ** argv) {
                         		if (PCB[i].processID == 0) {
                                 		PCB[i].processID = getpid();
                                 		printf("creating process with pid %d and assigning it to P%d", getpid(), i);
-                                		break;
+                                		processCounter += 1;
+						break;
                         		}
                 		}		
 				
@@ -248,7 +256,7 @@ int main(int argc, char ** argv) {
 			}
 			
 			//increase time to next fork by random value between 1 and 500 milliseconds
-			nextFork[1] = pow(10, 6) * (rand() & 500 + 1);
+			nextFork[1] = pow(10, 6) * (rand() % 500 + 1);
 	
 			//for every billion nanoseconds add 1 second and subtract billion nanoseconds
 			while (nextFork[1] > 99999999) {
@@ -262,22 +270,69 @@ int main(int argc, char ** argv) {
 		if (msgrcv(msgid, &message, sizeof(message), 1, 0) < 0)
                		perror("msgrcv: ");
 
-		//determine if process wants to read or write to
-		if (message.readOrWrite == 0) { //read
-                	printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);
-       		}
-        	else if (message.readOrWrite == 1){ //write
-                	printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
-        	}
+		//if message is read or write request
+		if (message.readOrWrite == 0 || message.readOrWrite == 1) { 
+                	
+			if (message.readOrWrite == 0)
+				printf("Process %d requesting read to page %d\n", message.pid, message.pageNumber);
+                	else if (message.readOrWrite == 1)
+				printf("Process %d requesting write to page %d\n", message.pid, message.pageNumber);
+                	else
+				printf("error with something\n");
 		
-		for (i = 0; i != MAX_PROCESSES; i += 1)
-			if (PCB[i].processID == message.pid)
-				break;
-		
-		
-		if (PCB[i].pageTable[message.pageNumber] == -1)
-			printf("page %d not in frame, page fault\n", message.pageNumber);
+			//find pcb with corresponding process id
+                	for (i = 0; i != MAX_PROCESSES; i += 1)
+                		if (PCB[i].processID == message.pid)
+                			break;
+			
+			if (PCB[i].pageTable[message.pageNumber] == -1) {
+                        	printf("page %d not in frame, page fault\n", message.pageNumber);
 
+                	}
+                	
+
+        	}
+		else { //process terminating
+			printf("Process %d terminating\n", message.pid);
+			
+			//set corresponding PCB process id to 0
+			for (i = 0; i != MAX_PROCESSES; i += 1)
+				if (PCB[i].processID == message.pid)
+					break;
+			PCB[i].processID = 0;
+			
+			int tmp; ;
+			//deallocate all frames
+			for (j = 0; j != 32; j += 1) {
+				//if page is in frame
+				if (PCB[i].pageTable[j] > 0) {
+					//sift through memory frames to free frames used by this process
+					while (true) {
+						//dequeue item
+						tmp = dequeue(memoryReferenceQueue);
+						//dequeue returns MIN_INT on error
+						if (tmp < 0)
+							printf("Queue is empty. Issue in termination code\n");
+						//if frame number from queue corresponds to frame number in the page
+						else if (tmp == PCB[i].pageTable[j]) {
+							printf("removing page %d from frame %d\n", j, tmp);
+							break;
+						}
+						//otherwise put back into queue
+						else { 
+							enqueue(memoryReferenceQueue, tmp);
+						}
+					}
+				}
+				
+			}
+			
+			//decrement process counter
+			processCounter -= 1;
+			
+		}
+		
+		
 		message.mesgType = message.pid;
 
 		if (msgsnd(msgid, &message, sizeof(message), 0) < 0)
@@ -291,7 +346,6 @@ int main(int argc, char ** argv) {
 	//Destroy message queue
 	if (msgctl(msgid, IPC_RMID, NULL) < 0)
                 perror("msgctl oss: ");
-	
 	if (shmctl(shmid, IPC_RMID, NULL) < 0)
 		perror("shmctl oss: ");	
 	if (shmdt(PCB) < 0)
