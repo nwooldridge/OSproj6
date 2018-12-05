@@ -1,0 +1,18 @@
+Let me preface by saying this is not perfect. 
+
+Enter the command <make> to compile and enter command <./oss> to run. 
+
+Enter the command <make clean> to remove executables, .o files and the log. 
+
+Sometimes when you run it, it will immediately get stuck and not output anything to log file. Just try running it again, it works on the second or third 
+time. 
+
+Also, for some reason, the code will never fully terminate. Oss gets stuck on a msgrcv but I don't know how to make it not wait for a message if there
+are no messages. 
+
+Another thing, at the end of the code, the last few forks fail, so some children processes must not be fully terminating. 
+
+I do not have command line arguments for max processes, but rather I have a constant integer named MAX_PROCESSES in oss that sets the max processes.
+It is currently set to 18. I haven't tried running this with anything other than 18.
+
+
